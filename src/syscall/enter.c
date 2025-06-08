@@ -173,7 +173,7 @@ int translate_syscall_enter(Tracee *tracee)
 			if (status < 0)
 				break;
 
-			status = join_paths(2, oldpath, path, ".");
+			status = join_paths2(oldpath, path, ".");
 			if (status < 0)
 				break;
 

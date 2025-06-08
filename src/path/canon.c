@@ -251,7 +251,7 @@ int canonicalize(Tracee *tracee, const char *user_path, bool deref_final,
 			continue;
 		}
 
-		status = join_paths(2, scratch_path, guest_path, component);
+		status = join_paths2(scratch_path, guest_path, component);
 		if (status < 0)
 			return status;
 
@@ -272,7 +272,7 @@ int canonicalize(Tracee *tracee, const char *user_path, bool deref_final,
 		 * they should be handled by the caller. */
 		if (status <= 0 || (finality == FINAL_NORMAL && !deref_final)) {
 			strcpy(scratch_path, guest_path);
-			status = join_paths(2, guest_path, scratch_path, component);
+			status = join_paths2(guest_path, scratch_path, component);
 			if (status < 0)
 				return status;
 			continue;
@@ -358,14 +358,14 @@ int canonicalize(Tracee *tracee, const char *user_path, bool deref_final,
 
 		case FINAL_SLASH:
 			strcpy(scratch_path, guest_path);
-			status = join_paths(2, guest_path, scratch_path, "");
+			status = join_paths2(guest_path, scratch_path, "");
 			if (status < 0)
 				return status;
 			break;
 
 		case FINAL_DOT:
 			strcpy(scratch_path, guest_path);
-			status = join_paths(2, guest_path, scratch_path, ".");
+			status = join_paths2(guest_path, scratch_path, ".");
 			if (status < 0)
 				return status;
 			break;

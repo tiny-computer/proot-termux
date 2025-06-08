@@ -110,6 +110,45 @@ int join_paths(int number_paths, char result[PATH_MAX], ...)
 	return status;
 }
 
+int join_paths2(char result[PATH_MAX], const char *path1, const char *path2) {
+	// Validate inputs
+    if (!path1 || !*path1) path1 = "";
+    if (!path2 || !*path2) path2 = "";
+
+    size_t len1 = strlen(path1);
+    size_t len2 = strlen(path2);
+
+    // Calculate the required length
+    int needs_separator = (len1 > 0 && path1[len1 - 1] != '/' && path2[0] != '/');
+    int has_double_separator = (len1 > 0 && path1[len1 - 1] == '/' && path2[0] == '/');
+    size_t new_length = len1 + len2 + (needs_separator ? 1 : 0) - (has_double_separator ? 1 : 0);
+
+    // Check for buffer overflow
+    if (new_length >= PATH_MAX) {
+        return -ENAMETOOLONG;
+    }
+
+    // Copy first path
+    memcpy(result, path1, len1);
+
+    // Add separator if needed
+    if (needs_separator) {
+        result[len1++] = '/';
+    } else if (has_double_separator) {
+        path2++;  // Skip the leading slash
+        len2--;
+    }
+
+    // Copy second path
+    memcpy(result + len1, path2, len2);
+    len1 += len2;
+
+    // Null-terminate the result
+    result[len1] = '\0';
+
+    return 0;
+}
+
 /**
  * Put in @host_path the full path to the given shell @command.  The
  * @command is searched in @paths if not null, otherwise in $PATH
@@ -364,7 +403,7 @@ int translate_path(Tracee *tracee, char result[PATH_MAX], int dir_fd,
 	/* So far "result" was used as a base path, it's time to join
 	 * it to the user path.  */
 	assert(result[0] == '/');
-	status = join_paths(2, guest_path, result, user_path);
+	status = join_paths2(guest_path, result, user_path);
 	if (status < 0)
 		return status;
 	strcpy(result, "/");
