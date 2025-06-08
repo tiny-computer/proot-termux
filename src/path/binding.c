@@ -502,7 +502,7 @@ Binding *new_binding(Tracee *tracee, const char *host, const char *guest, bool m
 	else
 		strcpy(base, "/");
 
-	status = join_paths(2, binding->guest.path, base, guest);
+	status = join_paths2(binding->guest.path, base, guest);
 	if (status < 0) {
 		note(tracee, WARNING, SYSTEM, "can't sanitize binding \"%s\"",
 			binding->guest.path);
@@ -645,7 +645,7 @@ static void add_induced_bindings(Tracee *tracee, const Binding *new_binding)
 		if (prefix_length == 1)
 			prefix_length = 0;
 
-		status = join_paths(2, path2, new_binding->guest.path, old_binding->guest.path + prefix_length);
+		status = join_paths2(path2, new_binding->guest.path, old_binding->guest.path + prefix_length);
 		if (status < 0)
 			continue;
 
