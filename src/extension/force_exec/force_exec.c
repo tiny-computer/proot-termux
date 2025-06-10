@@ -1,6 +1,7 @@
 #include <errno.h>     /* E*, */
 #include <sys/mman.h>  /* PROT_*, MAP_* */
 
+#include "syscall/chain.h"
 #include "extension/extension.h"
 
 static int force_exec_handle_sysexit_end(Tracee *tracee)
