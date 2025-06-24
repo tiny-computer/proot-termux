@@ -134,7 +134,7 @@ static int sysvipc_shm_send_helper_request(struct SysVIpcShmHelperRequest *reque
 			/* Fork again to detach from proot waitpid() */
 			forked = fork();
 			if (forked == 0) {
-				execl("/proc/self/exe", "proot", "--shm-helper", NULL);
+				execlp("proot", "proot", "--shm-helper", NULL);
 				perror("proot-shm-helper: execl");
 				_exit(1);
 			} else {
