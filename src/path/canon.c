@@ -271,10 +271,8 @@ int canonicalize(Tracee *tracee, const char *user_path, bool deref_final,
 		 * components.  Errors are explicitly ignored since
 		 * they should be handled by the caller. */
 		if (status <= 0 || (finality == FINAL_NORMAL && !deref_final)) {
-			strcpy(scratch_path, guest_path);
-			status = join_paths2(guest_path, scratch_path, component);
-			if (status < 0)
-				return status;
+			/* Optimization: Use the already built path from scratch_path */
+			strcpy(guest_path, scratch_path);
 			continue;
 		}
 
@@ -352,22 +350,43 @@ int canonicalize(Tracee *tracee, const char *user_path, bool deref_final,
 	 * or a terminating '.' may be required to keep the initial
 	 * semantic of `user_path`.  */
 	if (recursion_level == 0) {
+		size_t len;
 		switch (finality) {
 		case FINAL_NORMAL:
 			break;
 
 		case FINAL_SLASH:
-			strcpy(scratch_path, guest_path);
-			status = join_paths2(guest_path, scratch_path, "");
-			if (status < 0)
-				return status;
+			len = strlen(guest_path);
+			if (len == 0) {
+				strcpy(guest_path, "/");
+			} else if (len == 1) {
+				/* Only root: nothing to do. */
+			} else {
+				/* Append '/' if not already present. */
+				if (guest_path[len-1] != '/') {
+					if (len + 1 >= PATH_MAX)
+						return -ENAMETOOLONG;
+					guest_path[len] = '/';
+					guest_path[len+1] = '\0';
+				}
+			}
 			break;
 
 		case FINAL_DOT:
-			strcpy(scratch_path, guest_path);
-			status = join_paths2(guest_path, scratch_path, ".");
-			if (status < 0)
-				return status;
+			len = strlen(guest_path);
+			if (strcmp(guest_path, "/") == 0) {
+				if (len + 2 >= PATH_MAX)
+					return -ENAMETOOLONG;
+				/* Root becomes "/." */
+				guest_path[1] = '.';
+				guest_path[2] = '\0';
+			} else {
+				if (len + 2 >= PATH_MAX)
+					return -ENAMETOOLONG;
+				guest_path[len] = '/';
+				guest_path[len+1] = '.';
+				guest_path[len+2] = '\0';
+			}
 			break;
 
 		default:
