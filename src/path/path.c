@@ -534,7 +534,7 @@ int detranslate_path(Tracee *tracee, char path[PATH_MAX], const char t_referrer[
 		prefix_length = guest_root_len;
 
 		/* Special case when path to the guest rootfs == "/". */
-		if (guest_root_len == 1 && guest_root[0] == '/') /* More robust check for root="/" */
+		if (guest_root_len == 1)
 			prefix_length = 0;
 
 		new_length = strlen(path) - prefix_length;
