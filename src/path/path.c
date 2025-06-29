@@ -440,6 +440,8 @@ skip:
  */
 int detranslate_path(Tracee *tracee, char path[PATH_MAX], const char t_referrer[PATH_MAX])
 {
+	const char *guest_root;
+	size_t guest_root_len;
 	size_t prefix_length;
 	ssize_t new_length;
 
@@ -521,13 +523,18 @@ int detranslate_path(Tracee *tracee, char path[PATH_MAX], const char t_referrer[
 		}
 	}
 
-	switch (compare_paths(get_root(tracee), path)) {
+	guest_root = get_root(tracee);
+	guest_root_len = strlen(guest_root);
+
+	/* Using compare_paths2 which takes lengths, assuming path's length might change or isn't readily available without strlen */
+	/* However, compare_paths itself is fine if we pass guest_root directly. The main win is caching guest_root and its length. */
+	switch (compare_paths2(guest_root, guest_root_len, path, strlen(path))) {
 	case PATH1_IS_PREFIX:
 		/* Remove the leading part, that is, the "root".  */
-		prefix_length = strlen(get_root(tracee));
+		prefix_length = guest_root_len;
 
 		/* Special case when path to the guest rootfs == "/". */
-		if (prefix_length == 1)
+		if (guest_root_len == 1 && guest_root[0] == '/') /* More robust check for root="/" */
 			prefix_length = 0;
 
 		new_length = strlen(path) - prefix_length;
