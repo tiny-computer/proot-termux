@@ -345,9 +345,11 @@ int event_loop()
 
 		tracee->running = false;
 
+		/*
 		status = notify_extensions(tracee, NEW_STATUS, tracee_status, 0);
 		if (status != 0)
 			continue;
+		*/
 
 		if (tracee->as_ptracee.ptracer != NULL) {
 			bool keep_stopped = handle_ptracee_event(tracee, tracee_status);
