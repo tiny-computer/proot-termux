@@ -390,10 +390,10 @@ int translate_path(Tracee *tracee, char result[PATH_MAX], int dir_fd,
 		if (status < 0)
 			return status;
 	}
-
+	/*
 	VERBOSE(tracee, 2, "vpid %" PRIu64 ": translate(\"%s\" + \"%s\")",
 		tracee != NULL ? tracee->vpid : 0, result, user_path);
-
+	*/
 	status = notify_extensions(tracee, GUEST_PATH, (intptr_t) result, (intptr_t) user_path);
 	if (status < 0)
 		return status;
@@ -421,9 +421,10 @@ int translate_path(Tracee *tracee, char result[PATH_MAX], int dir_fd,
 		return status;
 
 skip:
+	/*
 	VERBOSE(tracee, 2, "vpid %" PRIu64 ":          -> \"%s\"",
 		tracee != NULL ? tracee->vpid : 0, result);
-
+	*/
 	status = notify_extensions(tracee, TRANSLATED_PATH, (intptr_t) result, 0);
 	if (status < 0)
 		return status;

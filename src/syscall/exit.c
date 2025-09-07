@@ -507,18 +507,18 @@ void translate_syscall_exit(Tracee *tracee)
 		}
 
 		if (translate_path(tracee, devshm_path, AT_FDCWD, "/dev/shm", true) < 0) {
-			VERBOSE(tracee, 5, "/dev/shm is not mounted, not changing statfs() result");
+			// VERBOSE(tracee, 5, "/dev/shm is not mounted, not changing statfs() result");
 			goto end;
 		}
 
 		if (read_path(tracee, statfs_path, peek_reg(tracee, MODIFIED, SYSARG_1)) < 0) {
-			VERBOSE(tracee, 5, "statfs() exit couldn't read statfs_path");
+			// VERBOSE(tracee, 5, "statfs() exit couldn't read statfs_path");
 			goto end;
 		}
 
 		Comparison comparison = compare_paths(devshm_path, statfs_path);
 		if (comparison == PATHS_ARE_EQUAL || comparison == PATH1_IS_PREFIX) {
-			VERBOSE(tracee, 5, "Updating statfs() result to fake tmpfs /dev/shm");
+			// VERBOSE(tracee, 5, "Updating statfs() result to fake tmpfs /dev/shm");
 			/* Write TMPFS_MAGIC at beginning of statfs structure.
 			 *
 			 * (It's at beginning of structure regardless of syscall variant
@@ -534,7 +534,7 @@ void translate_syscall_exit(Tracee *tracee)
 			}
 		}
 		else {
-			VERBOSE(tracee, 5, "statfs() not for /dev/shm, not changing result");
+			// VERBOSE(tracee, 5, "statfs() not for /dev/shm, not changing result");
 		}
 
 		goto end;

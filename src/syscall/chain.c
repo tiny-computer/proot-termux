@@ -119,12 +119,12 @@ void chain_next_syscall(Tracee *tracee)
 		tracee->chain.force_final_result = false;
 		tracee->chain.final_result = 0;
 
-		VERBOSE(tracee, 2, "chain_next_syscall finish");
+		// VERBOSE(tracee, 2, "chain_next_syscall finish");
 
 		return;
 	}
 
-	VERBOSE(tracee, 2, "chain_next_syscall continue");
+	// VERBOSE(tracee, 2, "chain_next_syscall continue");
 
 	/* Original register values will be restored right after the
 	 * last chained syscall.  */

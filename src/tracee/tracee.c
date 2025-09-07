@@ -582,7 +582,7 @@ int new_child(Tracee *parent, word_t clone_flags)
 			(void) restart_tracee(child, 0);
 	}
 
-	VERBOSE(child, 1, "vpid %" PRIu64 ": pid %d", child->vpid, child->pid);
+	// VERBOSE(child, 1, "vpid %" PRIu64 ": pid %d", child->vpid, child->pid);
 
 	return 0;
 }
