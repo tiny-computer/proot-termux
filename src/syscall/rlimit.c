@@ -108,9 +108,10 @@ int translate_setrlimit_exit(const Tracee *tracee, bool is_prlimit)
 
 	/* Increase current PRoot's stack limit.  */
 	status = prlimit64(0, RLIMIT_STACK, &proot_stack, NULL);
-	if (status < 0)
+	if (status < 0) {
 		VERBOSE(tracee, 1, "can't set stack limit.");
-	return 0; /* Not fatal.  */
+		return 0; /* Not fatal.  */
+	}
 
 	VERBOSE(tracee, 1, "stack soft limit increased to %llu bytes", proot_stack.rlim_cur);
 	return 0;
