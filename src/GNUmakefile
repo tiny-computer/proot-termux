@@ -15,7 +15,7 @@ OBJCOPY  ?= $(CROSS_COMPILE)objcopy
 OBJDUMP  ?= $(CROSS_COMPILE)objdump
 
 CPPFLAGS += -D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE -I. -I$(VPATH)
-CFLAGS   += -Wall -Wextra -O3 -march=native -mtune=native -flto -ffast-math
+CFLAGS   += -Wall -Wextra -O3 -march=armv8-a -flto
 LDFLAGS  += -ltalloc -Wl,-z,noexecstack -flto
 
 OBJECTS += \
