@@ -26,6 +26,7 @@
 #include <linux/ioctl.h> /* _IOW, */
 #include <linux/prctl.h> /* PR_GET_AUXV, */
 #include <string.h>      /* strlen(3), */
+#include <unistd.h>      /* readlink(2), */
 
 #include "cli/note.h"
 #include "syscall/syscall.h"
@@ -244,6 +245,15 @@ void translate_syscall_exit(Tracee *tracee)
 
 	case PR_fchdir:
 	case PR_chdir:
+	/* These syscalls are voided in enter.c; make sure the
+	 * tracee always sees a 0 return value even on kernels where
+	 * the SYSCALL_AVOIDER trick leaks -ENOSYS through.  */
+	case PR_unshare:
+	case PR_setns:
+	case PR_mount:
+	case PR_umount:
+	case PR_umount2:
+	case PR_pivot_root:
 		/* These syscalls are fully emulated, see enter.c for details
 		 * (like errors).  */
 		status = 0;
@@ -391,6 +401,27 @@ void translate_syscall_exit(Tracee *tracee)
 				break;
 		}
 
+		/* If the kernel filled the whole output buffer, the symlink
+		 * content was truncated to fit.  Detranslating a truncated
+		 * host path yields a wrong, wrongly-short guest path -- and
+		 * callers that only enlarge their buffer when readlink(2)
+		 * returns exactly the buffer size (bubblewrap's
+		 * readlink_malloc, glibc realpath, ...) never notice and
+		 * silently use the broken path.  Host paths are much longer
+		 * than the guest paths they map to (deep proot-distro rootfs
+		 * prefix), so short guest targets truncate easily.  Re-read
+		 * the link with a full-size buffer (referer is the translated
+		 * host path) so the detranslation below sees the real target;
+		 * readlink() simply fails for a non-symlink referer, leaving
+		 * the original content untouched.  */
+		if (old_size == max_size) {
+			ssize_t full = readlink(referer, referee, sizeof(referee) - 1);
+			if (full > 0) {
+				referee[full] = '\0';
+				old_size = (size_t) full;
+			}
+		}
+
 		status = detranslate_path(tracee, referee, referer);
 		if (status < 0)
 			break;
@@ -462,13 +493,14 @@ void translate_syscall_exit(Tracee *tracee)
 		translate_execve_exit(tracee);
 		goto end;
 
+	case PR_openat2:
 	case PR_openat:
 	case PR_open: {
 		/* Track /proc/self/auxv opens so read() results can be patched.
 		 * Needed on kernels < 6.4 where prctl(PR_GET_AUXV) is absent and
 		 * rustix falls back to reading /proc/self/auxv directly. */
 		char path_buf[sizeof("/proc/self/auxv")];
-		Reg path_reg = (get_sysnum(tracee, ORIGINAL) == PR_openat) ? SYSARG_2 : SYSARG_1;
+		Reg path_reg = (syscall_number == PR_open) ? SYSARG_1 : SYSARG_2;
 
 		if ((int) syscall_result < 0)
 			goto end;
@@ -661,6 +693,29 @@ void translate_syscall_exit(Tracee *tracee)
 		if (peek_reg(tracee, ORIGINAL, SYSARG_2) == _IOW(0x94, 9, int) /* FICLONE */ &&
 				(int) peek_reg(tracee, CURRENT, SYSARG_RESULT) == -EACCES) {
 			poke_reg(tracee, SYSARG_RESULT, -EOPNOTSUPP);
+		}
+		goto end;
+
+	case PR_socket:
+		/* Record the fd we substituted for an AF_NETLINK request.  */
+		if (tracee->pending_fake_netlink_socket) {
+			int fd = (int) peek_reg(tracee, CURRENT, SYSARG_RESULT);
+			if (fd >= 0) {
+				int i;
+				if (tracee->fake_netlink_fds_count < MAX_FAKE_NETLINK_FDS) {
+					/* Avoid duplicates.  */
+					bool present = false;
+					for (i = 0; i < tracee->fake_netlink_fds_count; i++) {
+						if (tracee->fake_netlink_fds[i] == fd) {
+							present = true;
+							break;
+						}
+					}
+					if (!present)
+						tracee->fake_netlink_fds[tracee->fake_netlink_fds_count++] = fd;
+				}
+			}
+			tracee->pending_fake_netlink_socket = false;
 		}
 		goto end;
 
