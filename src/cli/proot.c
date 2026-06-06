@@ -25,6 +25,7 @@
 #include <stdio.h>     /* printf(3), fflush(3), */
 #include <unistd.h>    /* write(2), */
 #include <errno.h>     /* errno, */
+#include <stdlib.h>   /* realpath(3), */
 
 #include "cli/cli.h"
 #include "cli/note.h"
@@ -442,6 +443,7 @@ static int handle_option_assured(Tracee *tracee, const Cli *cli UNUSED, const ch
 		note(tracee, WARNING, USER,
 			"--assured '%s': lstat: %s", value, strerror(errno));
 		memset(&statl, 0, sizeof(statl));
+		status = -errno;
 	}
 
 	assured_cache_add(resolved, &statl, status);

@@ -65,19 +65,25 @@ void assured_cache_add(const char *resolved_path, const struct stat *st, int lst
 	e->statl        = *st;
 	e->lstat_status = lstat_status;
 
+	printf("added %s:\n", resolved_path);
+
 	HASH_ADD_STR(assured_cache, path, e);
 }
 
 static bool assured_cache_lookup(const char *host_path, struct stat *st, int *lstat_status)
 {
 	struct assured_entry *e;
+	printf("looking for %s:", host_path);
 
 	HASH_FIND_STR(assured_cache, host_path, e);
+	printf(" result: %d:\n", e);
 	if (e == NULL)
 		return false;
-
+	printf("skipped:%s:", host_path);
 	*st           = e->statl;
 	*lstat_status = e->lstat_status;
+	if (e->lstat_status < 0)
+		errno = -e->lstat_status;
 	return true;
 }
 
