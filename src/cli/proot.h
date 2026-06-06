@@ -70,6 +70,7 @@ static int handle_option_p(Tracee *tracee, const Cli *cli, const char *value);
 static int handle_option_binfmt_x86(Tracee *tracee, const Cli *cli, const char *value);
 static int handle_option_binfmt_x64(Tracee *tracee, const Cli *cli, const char *value);
 static int handle_option_binfmt_wine(Tracee *tracee, const Cli *cli, const char *value);
+static int handle_option_assured(Tracee *tracee, const Cli *cli, const char *value);
 
 static int pre_initialize_bindings(Tracee *, const Cli *, size_t, char *const *, size_t);
 static int post_initialize_exe(Tracee *, const Cli *, size_t, char *const *, size_t);
@@ -126,6 +127,17 @@ Copyright (C) 2015 STMicroelectronics, licensed under GPL v2 or later.",
 \tbehavior shouldn't be a problem, although it is possible to\n\
 \texplicitly not dereference the guest location by appending it the\n\
 \t! character: -b *host_path*:*guest_location!*.",
+	},
+	{ .class = "Regular options",
+	  .arguments = {
+		{ .name = "--assured", .separator = '=', .value = "path" },
+		{ .name = NULL, .separator = '\0', .value = NULL } },
+	  .handler = handle_option_assured,
+	  .description = "Cache lstat(2) of host *path* to avoid repeated syscalls.",
+	  .detail = "\tThis option can be specified multiple times.  Each *path* is\n\
+\ta host path resolved via realpath(3) then lstat(2)'d; the result\n\
+\tis cached and reused during path canonicalisation.  Use for host\n\
+\tpaths known to exist and frequently traversed.",
 	},
 	{ .class = "Regular options",
 	  .arguments = {
