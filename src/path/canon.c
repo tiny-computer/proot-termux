@@ -31,12 +31,55 @@
 #include <stdio.h>     /* sscanf(3), */
 
 #include "path/canon.h"
+#include "path/uthash.h"
 #include "path/path.h"
 #include "path/binding.h"
 #include "path/glue.h"
 #include "path/proc.h"
 #include "path/f2fs-bug.h"
 #include "extension/extension.h"
+
+/**********************************************************************
+ *                 Assured lstat cache (--assured)                    *
+ **********************************************************************/
+
+struct assured_entry {
+	char           path[PATH_MAX];
+	struct stat    statl;
+	int            lstat_status;
+	UT_hash_handle hh;
+};
+
+static struct assured_entry *assured_cache = NULL;
+
+void assured_cache_add(const char *resolved_path, const struct stat *st, int lstat_status)
+{
+	struct assured_entry *e;
+
+	e = malloc(sizeof(*e));
+	if (e == NULL)
+		return;
+
+	strncpy(e->path, resolved_path, PATH_MAX - 1);
+	e->path[PATH_MAX - 1] = '\0';
+	e->statl        = *st;
+	e->lstat_status = lstat_status;
+
+	HASH_ADD_STR(assured_cache, path, e);
+}
+
+static bool assured_cache_lookup(const char *host_path, struct stat *st, int *lstat_status)
+{
+	struct assured_entry *e;
+
+	HASH_FIND_STR(assured_cache, host_path, e);
+	if (e == NULL)
+		return false;
+
+	*st           = e->statl;
+	*lstat_status = e->lstat_status;
+	return true;
+}
 
 /**
  * Put an end-of-string ('\0') right before the last component of @path.
@@ -156,7 +199,8 @@ static inline int substitute_binding_stat(Tracee *tracee, Finality finality, uns
 	if (should_skip_file_access_due_to_f2fs_bug(tracee, host_path)) {
 		status = -ENOENT;
 	} else {
-		status = lstat(host_path, &statl);
+		if (!assured_cache_lookup(host_path, &statl, &status))
+			status = lstat(host_path, &statl);
 		/* /linkerconfig directory is present and accessible on Android,
 		 * but cannot be stat()'d, use hardcoded stat if access was denied
 		 *

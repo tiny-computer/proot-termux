@@ -24,12 +24,14 @@
 #include <assert.h>    /* assert(3), */
 #include <stdio.h>     /* printf(3), fflush(3), */
 #include <unistd.h>    /* write(2), */
+#include <errno.h>     /* errno, */
 
 #include "cli/cli.h"
 #include "cli/note.h"
 #include "extension/extension.h"
 #include "extension/sysvipc/sysvipc.h"
 #include "path/binding.h"
+#include "path/canon.h"
 #include "attribute.h"
 
 /* These should be included last.  */
@@ -416,6 +418,34 @@ static int pre_initialize_bindings(Tracee *tracee, const Cli *cli,
 	}
 
 	return cursor;
+}
+
+/**
+ * Handle --assured: resolve the given host path via realpath(3),
+ * lstat(2) it, and cache the result globally for reuse during
+ * path canonicalisation.
+ */
+static int handle_option_assured(Tracee *tracee, const Cli *cli UNUSED, const char *value)
+{
+	char resolved[PATH_MAX];
+	struct stat statl;
+	int status;
+
+	if (realpath(value, resolved) == NULL) {
+		note(tracee, WARNING, USER,
+			"--assured '%s': realpath: %s", value, strerror(errno));
+		return 0;
+	}
+
+	status = lstat(resolved, &statl);
+	if (status < 0) {
+		note(tracee, WARNING, USER,
+			"--assured '%s': lstat: %s", value, strerror(errno));
+		memset(&statl, 0, sizeof(statl));
+	}
+
+	assured_cache_add(resolved, &statl, status);
+	return 0;
 }
 
 const Cli *get_proot_cli(TALLOC_CTX *context UNUSED)
