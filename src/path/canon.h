@@ -32,6 +32,6 @@
 extern int canonicalize(Tracee *tracee, const char *user_path, bool deref_final,
 			char guest_path[PATH_MAX], unsigned int nb_recursion);
 
-extern void assured_cache_add(const char *resolved_path, const struct stat *st, int lstat_status);
+extern void assured_path_cache_add(const char *resolved_path, const struct stat *st, int lstat_status);
 
 #endif /* CANON_H */

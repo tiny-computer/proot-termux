@@ -70,7 +70,7 @@ static int handle_option_p(Tracee *tracee, const Cli *cli, const char *value);
 static int handle_option_binfmt_x86(Tracee *tracee, const Cli *cli, const char *value);
 static int handle_option_binfmt_x64(Tracee *tracee, const Cli *cli, const char *value);
 static int handle_option_binfmt_wine(Tracee *tracee, const Cli *cli, const char *value);
-static int handle_option_assured(Tracee *tracee, const Cli *cli, const char *value);
+static int handle_option_assured_path(Tracee *tracee, const Cli *cli, const char *value);
 
 static int pre_initialize_bindings(Tracee *, const Cli *, size_t, char *const *, size_t);
 static int post_initialize_exe(Tracee *, const Cli *, size_t, char *const *, size_t);
@@ -130,9 +130,9 @@ Copyright (C) 2015 STMicroelectronics, licensed under GPL v2 or later.",
 	},
 	{ .class = "Regular options",
 	  .arguments = {
-		{ .name = "--assured", .separator = '=', .value = "path" },
+		{ .name = "--assured-path", .separator = '=', .value = "path" },
 		{ .name = NULL, .separator = '\0', .value = NULL } },
-	  .handler = handle_option_assured,
+	  .handler = handle_option_assured_path,
 	  .description = "Cache lstat(2) of host *path* to avoid repeated syscalls.",
 	  .detail = "\tThis option can be specified multiple times.  Each *path* is\n\
 \ta host path resolved via realpath(3) then lstat(2)'d; the result\n\
