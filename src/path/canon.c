@@ -40,21 +40,21 @@
 #include "extension/extension.h"
 
 /**********************************************************************
- *                 Assured lstat cache (--assured)                    *
+ *                 Assured lstat cache (--assured-path)               *
  **********************************************************************/
 
-struct assured_entry {
+struct assured_path_entry {
 	char           path[PATH_MAX];
 	struct stat    statl;
 	int            lstat_status;
 	UT_hash_handle hh;
 };
 
-static struct assured_entry *assured_cache = NULL;
+static struct assured_path_entry *assured_path_cache = NULL;
 
-void assured_cache_add(const char *resolved_path, const struct stat *st, int lstat_status)
+void assured_path_cache_add(const char *resolved_path, const struct stat *st, int lstat_status)
 {
-	struct assured_entry *e;
+	struct assured_path_entry *e;
 
 	e = malloc(sizeof(*e));
 	if (e == NULL)
@@ -65,14 +65,14 @@ void assured_cache_add(const char *resolved_path, const struct stat *st, int lst
 	e->statl        = *st;
 	e->lstat_status = lstat_status;
 
-	HASH_ADD_STR(assured_cache, path, e);
+	HASH_ADD_STR(assured_path_cache, path, e);
 }
 
-static bool assured_cache_lookup(const char *host_path, struct stat *st, int *lstat_status)
+static bool assured_path_cache_lookup(const char *host_path, struct stat *st, int *lstat_status)
 {
-	struct assured_entry *e;
+	struct assured_path_entry *e;
 
-	HASH_FIND_STR(assured_cache, host_path, e);
+	HASH_FIND_STR(assured_path_cache, host_path, e);
 	if (e == NULL)
 		return false;
 	*st           = e->statl;
@@ -200,7 +200,7 @@ static inline int substitute_binding_stat(Tracee *tracee, Finality finality, uns
 	if (should_skip_file_access_due_to_f2fs_bug(tracee, host_path)) {
 		status = -ENOENT;
 	} else {
-		if (!assured_cache_lookup(host_path, &statl, &status))
+		if (!assured_path_cache_lookup(host_path, &statl, &status))
 			status = lstat(host_path, &statl);
 		/* /linkerconfig directory is present and accessible on Android,
 		 * but cannot be stat()'d, use hardcoded stat if access was denied
