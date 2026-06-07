@@ -73,8 +73,10 @@ static bool assured_path_cache_lookup(const char *host_path, struct stat *st, in
 	struct assured_path_entry *e;
 
 	HASH_FIND_STR(assured_path_cache, host_path, e);
-	if (e == NULL)
+	if (e == NULL) {
+		printf("%s not found in cache\n", host_path);
 		return false;
+	}
 	*st           = e->statl;
 	*lstat_status = e->lstat_status;
 	if (e->lstat_status < 0)
