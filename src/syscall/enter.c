@@ -29,6 +29,7 @@
 #include <string.h>      /* strcpy */
 #include <sys/prctl.h>   /* PR_SET_DUMPABLE */
 #include <termios.h>     /* TCSETS, TCSANOW */
+#include "syscall/pipe_shadow.h"
 
 #include "cli/note.h"
 #include "syscall/syscall.h"
@@ -748,10 +749,17 @@ int translate_syscall_enter(Tracee *tracee)
 			break;
 		}
 	case PR_close:
+		int closed_fd = (int) peek_reg(tracee, CURRENT, SYSARG_1);
+
 		/* Stop tracking auxv_fd once the tracee closes it. */
-		if (tracee->auxv_fd >= 0
-		    && (int) peek_reg(tracee, CURRENT, SYSARG_1) == tracee->auxv_fd)
+		if (tracee->auxv_fd >= 0 && closed_fd == tracee->auxv_fd)
 			tracee->auxv_fd = -1;
+		
+		/* Keep a shadow read end so child writers don't get
+		 * EPIPE when the parent closes its copy first (ptrace
+		 * serialisation makes this happen routinely, breaking
+		 * process substitution like `echo <(echo a)`).  */
+		shadow_pipe_read_end(tracee->pid, closed_fd);
 		break;
 
 	}
