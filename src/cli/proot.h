@@ -71,8 +71,10 @@ static int handle_option_binfmt_x86(Tracee *tracee, const Cli *cli, const char *
 static int handle_option_binfmt_x64(Tracee *tracee, const Cli *cli, const char *value);
 static int handle_option_binfmt_wine(Tracee *tracee, const Cli *cli, const char *value);
 static int handle_option_assured_path(Tracee *tracee, const Cli *cli, const char *value);
+static int handle_option_external_storage(Tracee *tracee, const Cli *cli, const char *value);
 
 static int pre_initialize_bindings(Tracee *, const Cli *, size_t, char *const *, size_t);
+static int post_initialize_storage(Tracee *, const Cli *, size_t, char *const *, size_t);
 static int post_initialize_exe(Tracee *, const Cli *, size_t, char *const *, size_t);
 
 static Cli proot_cli = {
@@ -88,8 +90,9 @@ Copyright (C) 2015 STMicroelectronics, licensed under GPL v2 or later.",
 |   __/     /  _  \\/  _  \\    _|\n\
 |__|  |__|__\\_____/\\_____/\\____|",
 
-	.pre_initialize_bindings = pre_initialize_bindings,
-	.post_initialize_exe = post_initialize_exe,
+	.pre_initialize_bindings  = pre_initialize_bindings,
+	.post_initialize_bindings = post_initialize_storage,
+	.post_initialize_exe      = post_initialize_exe,
 
 	.options = {
 	{ .class = "Regular options",
@@ -323,6 +326,16 @@ Copyright (C) 2015 STMicroelectronics, licensed under GPL v2 or later.",
           .description = "Bind interpreter for windows executables like binfmt_misc does.",
           .detail = "\tExample: --wine=/usr/bin/wine64",
         },
+	{ .class = "Extension options",
+	  .arguments = {
+		{ .name = "--tiny-storage", .separator = '\0', .value = NULL },
+		{ .name = NULL, .separator = '\0', .value = NULL } },
+	  .handler = handle_option_external_storage,
+	  .description = "Listen on a Unix socket for dynamic external-storage bind requests.",
+	  .detail = "\tCreates $PROOT_TMP_DIR/.tiny.storage and listens for\n\
+\tmount/umount messages sent by the Android TinyStorage\n\
+\tservice.  Received paths are bound under /mnt/.",
+	},
 	{ .class = "Alias options",
 	  .arguments = {
 		{ .name = "-R", .separator = ' ', .value = "path" },

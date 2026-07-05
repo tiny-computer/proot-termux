@@ -26,6 +26,10 @@
 #include <unistd.h>    /* write(2), */
 #include <errno.h>     /* errno, */
 #include <stdlib.h>   /* realpath(3), */
+#include <pthread.h>   /* pthread_create(3), */
+#include <sys/socket.h>/* socket(2), */
+#include <sys/un.h>    /* struct sockaddr_un */
+#include <sys/queue.h> /* CIRCLEQ_* */
 
 #include "cli/cli.h"
 #include "cli/note.h"
@@ -33,6 +37,7 @@
 #include "extension/sysvipc/sysvipc.h"
 #include "path/binding.h"
 #include "path/canon.h"
+#include "path/temp.h"  /* get_temp_directory() */
 #include "attribute.h"
 
 /* These should be included last.  */
@@ -448,6 +453,213 @@ static int handle_option_assured_path(Tracee *tracee, const Cli *cli UNUSED, con
 
 	assured_path_cache_add(resolved, &statl, status);
 	return 0;
+}
+
+/**
+ * Handle --tiny-storage: create a Unix-domain socket server
+ * at $PROOT_TMP_DIR/.tiny.storage and spawn a thread that listens for
+ * dynamic bind/unbind messages from the Android TinyStorage service.
+ *
+ * Protocol (binary, fixed-size struct):
+ *
+ *   #define SM_PATH_MAX 512
+ *   #define SM_NAME_MAX 128
+ *
+ *   typedef struct {
+ *       uint8_t  action;              // 'A' = add, 'R' = remove
+ *       char     path[SM_PATH_MAX];   // host device path
+ *       char     name[SM_NAME_MAX];   // mount-name under /mnt/
+ *   } storage_msg_t;
+ *
+ * Must stay in sync with tiny_storage_jni.c.
+ */
+#define SM_PATH_MAX  512
+#define SM_NAME_MAX  128
+
+typedef struct {
+	uint8_t  action;
+	char     path[SM_PATH_MAX];
+	char     name[SM_NAME_MAX];
+} storage_msg_t;
+
+static void *storage_listen_thread(void *arg)
+{
+	Tracee *tracee = (Tracee *)arg;
+	const char *tmp_dir = get_temp_directory();
+	char socket_path[PATH_MAX];
+	int fd, client;
+	struct sockaddr_un addr;
+	storage_msg_t msg;
+
+	snprintf(socket_path, sizeof(socket_path), "%s/.tiny.storage", tmp_dir);
+
+	fd = socket(AF_UNIX, SOCK_STREAM, 0);
+	if (fd < 0) {
+		note(tracee, WARNING, SYSTEM,
+			"--tiny-storage: socket() failed");
+		return NULL;
+	}
+
+	memset(&addr, 0, sizeof(addr));
+	addr.sun_family = AF_UNIX;
+	strncpy(addr.sun_path, socket_path, sizeof(addr.sun_path) - 1);
+
+	unlink(socket_path);
+	if (bind(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
+		note(tracee, WARNING, SYSTEM,
+			"--tiny-storage: bind(%s) failed", socket_path);
+		close(fd);
+		return NULL;
+	}
+	chmod(socket_path, 0666);
+
+	if (listen(fd, 5) < 0) {
+		note(tracee, WARNING, SYSTEM,
+			"--tiny-storage: listen() failed");
+		unlink(socket_path);
+		close(fd);
+		return NULL;
+	}
+
+	note(tracee, INFO, USER,
+		"--tiny-storage: listening on %s", socket_path);
+
+	for (;;) {
+		client = accept(fd, NULL, NULL);
+		if (client < 0) {
+			if (errno == EINTR) continue;
+			note(tracee, WARNING, SYSTEM,
+				"--tiny-storage: accept() failed");
+			break;
+		}
+
+		/* Read messages until client disconnects or error */
+		while (1) {
+			ssize_t n = read(client, &msg, sizeof(msg));
+			if (n <= 0) {
+				if (n < 0 && errno == EINTR) continue;
+				break; /* EOF or error */
+			}
+			if ((size_t)n < sizeof(msg)) {
+				/* short read – client misbehaving, skip rest */
+				note(tracee, WARNING, USER,
+					"storage: short msg %zd/%zu bytes", n, sizeof(msg));
+				break;
+			}
+
+			if (msg.action == 'A') {
+				/* add binding: equivalent to
+				 *   handle_option_b → new_binding →
+				 *   initialize_bindings → initialize_binding
+				 */
+				Binding *binding;
+				char host[PATH_MAX];
+				char guest[PATH_MAX];
+				int status;
+
+				snprintf(guest, sizeof(guest), "/mnt/%s", msg.name);
+
+				/* Canonicalize host path (same as new_binding). */
+				status = realpath2(NULL, host, msg.path, true);
+				if (status < 0) {
+					note(tracee, WARNING, SYSTEM,
+						"storage: realpath(%s) failed", msg.path);
+					continue;
+				}
+
+				binding = talloc_zero(tracee->ctx, Binding);
+				if (binding == NULL)
+					continue;
+
+				strcpy(binding->host.path, host);
+				binding->host.length = strlen(host);
+				strcpy(binding->guest.path, guest);
+
+				pthread_mutex_lock(&tracee->fs->bindings.lock);
+				initialize_binding(tracee, binding);
+				pthread_mutex_unlock(&tracee->fs->bindings.lock);
+
+				note(tracee, INFO, USER,
+					"storage: bind %s → %s", host, guest);
+			}
+			else if (msg.action == 'R') {
+				char guest[PATH_MAX];
+				Binding *b, *to_remove = NULL;
+				const char *guest_root;
+
+				snprintf(guest, sizeof(guest), "/mnt/%s", msg.name);
+				note(tracee, INFO, USER,
+					"storage: unbind %s", guest);
+
+				pthread_mutex_lock(&tracee->fs->bindings.lock);
+				CIRCLEQ_FOREACH(b, tracee->fs->bindings.guest, link.guest) {
+					if (strcmp(b->guest.path, guest) == 0) {
+						to_remove = b;
+						break;
+					}
+				}
+				if (to_remove) {
+					remove_binding_from_all_lists(tracee, to_remove);
+				}
+				pthread_mutex_unlock(&tracee->fs->bindings.lock);
+
+				/* Remove the build_glue() placeholder directory
+				 * (mkdir(…, 0) – rmdir does not check target permissions). */
+				guest_root = get_root(tracee);
+				if (guest_root && to_remove) {
+					char placeholder[PATH_MAX];
+					snprintf(placeholder, sizeof(placeholder),
+						"%s%s", guest_root, guest);
+					rmdir(placeholder);
+				}
+			}
+		}
+		close(client);
+	}
+
+	close(fd);
+	unlink(socket_path);
+	return NULL;
+}
+
+/**
+ * Handle --tiny-storage: record that the option was requested.
+ * The actual socket listener is spawned later from
+ * post_initialize_storage(), after initialize_bindings() has
+ * set up tracee->fs->bindings.host/guest.
+ */
+static int handle_option_external_storage(
+	Tracee *tracee, const Cli *cli UNUSED, const char *value UNUSED)
+{
+	tracee->external_storage_enabled = true;
+	note(tracee, INFO, USER, "--tiny-storage requested");
+	return 0;
+}
+
+/**
+ * post_initialize_bindings hook – called after initialize_bindings()
+ * has populated tracee->fs->bindings.{host,guest}, so the socket
+ * listener thread can safely call insort_binding3() and iterate
+ * bindings.
+ */
+static int post_initialize_storage(
+	Tracee *tracee, const Cli *cli UNUSED,
+	size_t argc UNUSED, char *const argv[] UNUSED, size_t cursor)
+{
+	pthread_t tid;
+
+	if (!tracee->external_storage_enabled)
+		return (int)cursor;
+
+	note(tracee, INFO, USER, "--tiny-storage: starting socket listener");
+
+	if (pthread_create(&tid, NULL, storage_listen_thread, tracee) != 0) {
+		note(tracee, WARNING, SYSTEM,
+			"--tiny-storage: pthread_create() failed");
+		return -1;
+	}
+	pthread_detach(tid);
+	return (int)cursor;
 }
 
 const Cli *get_proot_cli(TALLOC_CTX *context UNUSED)
