@@ -29,6 +29,7 @@
 #include <errno.h>    /* E* */
 #include <sys/queue.h> /* CIRCLEQ_*, */
 #include <talloc.h>   /* talloc_*, */
+#include <pthread.h>  /* pthread_mutex_*, */
 
 #include "path/binding.h"
 #include "path/path.h"
@@ -104,6 +105,8 @@ static void print_bindings(const Tracee *tracee)
 	if (tracee->fs->bindings.guest == NULL)
 		return;
 
+	pthread_mutex_lock((pthread_mutex_t *)&tracee->fs->bindings.lock);
+
 	CIRCLEQ_FOREACH_(tracee, binding, GUEST) {
 		if (compare_paths(binding->host.path, binding->guest.path) == PATHS_ARE_EQUAL)
 			note(tracee, INFO, USER, "binding = %s", binding->host.path);
@@ -111,6 +114,8 @@ static void print_bindings(const Tracee *tracee)
 			note(tracee, INFO, USER, "binding = %s:%s",
 				binding->host.path, binding->guest.path);
 	}
+
+	pthread_mutex_unlock((pthread_mutex_t *)&tracee->fs->bindings.lock);
 }
 
 /**
@@ -171,22 +176,31 @@ Binding *get_binding(const Tracee *tracee, Side side, const char path[PATH_MAX])
 const char *get_path_binding(const Tracee *tracee, Side side, const char path[PATH_MAX])
 {
 	const Binding *binding;
+	const char *result;
+
+	pthread_mutex_lock((pthread_mutex_t *)&tracee->fs->bindings.lock);
 
 	binding = get_binding(tracee, side, path);
-	if (!binding)
+	if (!binding) {
+		pthread_mutex_unlock((pthread_mutex_t *)&tracee->fs->bindings.lock);
 		return NULL;
+	}
 
 	switch (side) {
 	case GUEST:
-		return binding->guest.path;
-
+		result = binding->guest.path;
+		break;
 	case HOST:
-		return binding->host.path;
-
+		result = binding->host.path;
+		break;
 	default:
 		assert(0);
-		return NULL;
+		result = NULL;
+		break;
 	}
+
+	pthread_mutex_unlock((pthread_mutex_t *)&tracee->fs->bindings.lock);
+	return result;
 }
 
 /**
@@ -242,13 +256,19 @@ int substitute_binding(const Tracee *tracee, Side side, char path[PATH_MAX])
 	const Path *ref;
 	const Binding *binding;
 
+	pthread_mutex_lock((pthread_mutex_t *)&tracee->fs->bindings.lock);
+
 	binding = get_binding(tracee, side, path);
-	if (!binding)
+	if (!binding) {
+		pthread_mutex_unlock((pthread_mutex_t *)&tracee->fs->bindings.lock);
 		return -ENOENT;
+	}
 
 	/* Is it a "symetric" binding?  */
-	if (!binding->need_substitution)
+	if (!binding->need_substitution) {
+		pthread_mutex_unlock((pthread_mutex_t *)&tracee->fs->bindings.lock);
 		return 0;
+	}
 
 	switch (side) {
 	case GUEST:
@@ -263,11 +283,13 @@ int substitute_binding(const Tracee *tracee, Side side, char path[PATH_MAX])
 
 	default:
 		assert(0);
+		pthread_mutex_unlock((pthread_mutex_t *)&tracee->fs->bindings.lock);
 		return -EACCES;
 	}
 
 	substitute_path_prefix(path, ref->length, reverse_ref->path, reverse_ref->length);
 
+	pthread_mutex_unlock((pthread_mutex_t *)&tracee->fs->bindings.lock);
 	return 1;
 }
 
@@ -276,14 +298,18 @@ int substitute_binding(const Tracee *tracee, Side side, char path[PATH_MAX])
  */
 void remove_binding_from_all_lists(const Tracee *tracee, Binding *binding)
 {
-       if (IS_LINKED(binding, link.pending))
-	       CIRCLEQ_REMOVE_(tracee, binding, pending);
+	pthread_mutex_lock((pthread_mutex_t *)&tracee->fs->bindings.lock);
 
-       if (IS_LINKED(binding, link.guest))
-	       CIRCLEQ_REMOVE_(tracee, binding, guest);
+	if (IS_LINKED(binding, link.pending))
+		CIRCLEQ_REMOVE_(tracee, binding, pending);
 
-       if (IS_LINKED(binding, link.host))
-	       CIRCLEQ_REMOVE_(tracee, binding, host);
+	if (IS_LINKED(binding, link.guest))
+		CIRCLEQ_REMOVE_(tracee, binding, guest);
+
+	if (IS_LINKED(binding, link.host))
+		CIRCLEQ_REMOVE_(tracee, binding, host);
+
+	pthread_mutex_unlock((pthread_mutex_t *)&tracee->fs->bindings.lock);
 }
 
 /**
@@ -298,7 +324,11 @@ static void insort_binding(const Tracee *tracee, Side side, Binding *binding)
 {
 	Binding *iterator;
 	Binding *previous = NULL;
-	Binding *next = CIRCLEQ_FIRST(HEAD(tracee, side));
+	Binding *next;
+
+	pthread_mutex_lock((pthread_mutex_t *)&tracee->fs->bindings.lock);
+
+	next = CIRCLEQ_FIRST(HEAD(tracee, side));
 
 	/* Find where it should be added in the list.  */
 	CIRCLEQ_FOREACH_(tracee, iterator, side) {
@@ -320,6 +350,7 @@ static void insort_binding(const Tracee *tracee, Side side, Binding *binding)
 
 		default:
 			assert(0);
+			pthread_mutex_unlock((pthread_mutex_t *)&tracee->fs->bindings.lock);
 			return;
 		}
 
@@ -343,6 +374,7 @@ static void insort_binding(const Tracee *tracee, Side side, Binding *binding)
 			/* Replace this iterator with the new binding.  */
 			CIRCLEQ_INSERT_AFTER_(tracee, iterator, binding, side);
 			remove_binding_from_all_lists(tracee, iterator);
+			pthread_mutex_unlock((pthread_mutex_t *)&tracee->fs->bindings.lock);
 			return;
 
 		case PATH1_IS_PREFIX:
@@ -362,6 +394,7 @@ static void insort_binding(const Tracee *tracee, Side side, Binding *binding)
 
 		default:
 			assert(0);
+			pthread_mutex_unlock((pthread_mutex_t *)&tracee->fs->bindings.lock);
 			return;
 		}
 	}
@@ -373,6 +406,8 @@ static void insort_binding(const Tracee *tracee, Side side, Binding *binding)
 		CIRCLEQ_INSERT_BEFORE_(tracee, next, binding, side);
 	else
 		CIRCLEQ_INSERT_HEAD_(tracee, binding, side);
+
+	pthread_mutex_unlock((pthread_mutex_t *)&tracee->fs->bindings.lock);
 }
 
 /**
@@ -544,7 +579,7 @@ error:
  * @tracee->fs->bindings.guest and @tracee->fs->bindings.host.  This
  * function returns -1 if an error occured, 0 otherwise.
  */
-static void initialize_binding(Tracee *tracee, Binding *binding)
+void initialize_binding(Tracee *tracee, Binding *binding)
 {
 	char path[PATH_MAX];
 	struct stat statl;
@@ -726,6 +761,14 @@ int initialize_bindings(Tracee *tracee)
 
 	CIRCLEQ_INIT(tracee->fs->bindings.guest);
 	CIRCLEQ_INIT(tracee->fs->bindings.host);
+
+	{
+		pthread_mutexattr_t attr;
+		pthread_mutexattr_init(&attr);
+		pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+		pthread_mutex_init(&tracee->fs->bindings.lock, &attr);
+		pthread_mutexattr_destroy(&attr);
+	}
 
 	talloc_set_destructor(tracee->fs->bindings.guest, remove_bindings);
 	talloc_set_destructor(tracee->fs->bindings.host, remove_bindings);

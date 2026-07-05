@@ -30,6 +30,7 @@
 #include <sys/ptrace.h>/* enum __ptrace_request */
 #include <talloc.h>    /* talloc_*, */
 #include <stdint.h>    /* *int*_t, */
+#include <pthread.h>   /* pthread_mutex_t, */
 
 #include "arch.h" /* word_t, user_regs_struct, HAS_POKEDATA_WORKAROUND */
 #include "compat.h"
@@ -58,6 +59,10 @@ typedef struct {
 
 		/* List of bindings canonicalized and sorted in the "host" order.  */
 		struct bindings *host;
+
+		/* Serializes concurrent access from the ptrace event
+		 * loop and the storage listener thread. */
+		pthread_mutex_t lock;
 	} bindings;
 
 	/* Current working directory, à la /proc/self/pwd.  */
@@ -275,6 +280,11 @@ typedef struct tracee {
 	 * PR_SET_NO_NEW_PRIVS that PRoot performs itself in the launch child
 	 * (before that execve) when tracking @no_new_privs. */
 	bool seen_execve;
+
+	/* True when --tiny-storage option was specified.  The actual
+	 * socket listener is spawned in post_initialize_bindings
+	 * (after the binding lists are ready). */
+	bool external_storage_enabled;
 
 	/**********************************************************************
 	 * Shared or private resources, depending on the CLONE_FS/VM flags.   *
